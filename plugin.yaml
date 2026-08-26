@@ -1,0 +1,4 @@
+name: hermes-locker
+version: 0.2.0
+description: Locker Secrets Manager source for Hermes credentials.
+author: Hermes Locker contributors
