@@ -1,48 +1,95 @@
+<!-- generated-by: gsd-doc-writer -->
 # Hermes Locker
 
-`Hermes Locker` is a standalone Hermes Secret Source plugin for Locker Secrets Manager. It resolves explicit `locker://lower_snake_case` references at startup into the active profile's in-memory secret scope.
+[English](README.md) | [Português (Brasil)](README.pt-BR.md)
 
-## Security model
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-- Locker remains the source of truth for operational credentials.
-- Configuration stores references only; never secret values.
-- Resolution is explicit: each profile maps an environment variable to one Locker reference.
-- The plugin uses Locker CLI with a minimal child environment, closed stdin, and a bounded timeout.
-- It does not cache decrypted values in the plugin or write them to disk.
-- A failed, invalid, or empty lookup contributes no secret values.
-- Hermes owns precedence, provenance, profile isolation, and environment application.
+Hermes Secret Source plugin that resolves explicit Locker Secrets Manager references into the active Hermes profile at startup.
 
-## Quick start
+## What it does
 
-### 1. Install the Locker CLI
+- Maps Hermes environment variables to `locker://lower_snake_case` references.
+- Uses the active profile's bootstrap credentials instead of process-global cached values.
+- Sends only a minimal, ephemeral environment to the Locker CLI.
+- Never prints resolved values or writes them to Hermes configuration.
+- Applies a mapping as a single unit: if one lookup fails or is empty, none of that pass's values are returned.
+- Supports the legacy `LOCKER_SECRET_ACCESS_KEY` name by normalizing it only inside the Locker subprocess environment.
 
-Download the binary using the official instructions at **https://locker.io/secrets/download**.
+The plugin does not maintain a Python cache or write decrypted values itself. The Locker CLI may maintain its own local data according to its implementation; `--refresh` is used for every plugin lookup to require a fresh Locker response.
 
-📖 **Full CLI documentation:** https://support.locker.io/en/locker-secrets-manager/developer-tools/secrets-commands-cli
+## Requirements
 
-Do not pipe remote installer scripts into a shell. Confirm the installed binary with `locker --version`.
+- A Hermes installation with Secret Source plugin support.
+- Locker CLI available on the gateway service account's `PATH`.
+- A Locker access key with read permission for every mapped secret.
 
 This release is validated against Locker CLI 2.0.13.
 
-### 2. Configure access keys
+## Installation
 
-Set the bootstrap credentials in your Hermes `.env` file using an operator-controlled editor, then restrict the file to its service account with mode `0600`. Never put credential values in shell history, `config.yaml`, or repositories.
+### 1. Install the Locker CLI
 
-Credential files are intentionally unsupported by this plugin because Hermes bootstrap credentials must remain scoped to the active profile.
+Follow the official [Locker CLI download instructions](https://locker.io/secrets/download) and review the [Locker secrets command documentation](https://support.locker.io/en/locker-secrets-manager/developer-tools/secrets-commands-cli).
 
-### 3. Add secrets to Locker
+Do not pipe remote installer scripts into a shell. Verify the installed binary:
 
-Use the Locker web dashboard at **https://secrets.locker.io**. Avoid passing secret values as command-line arguments.
+```bash
+locker --version
+```
 
-### 4. Install the Hermes plugin
+### 2. Provision the Hermes bootstrap access key
+
+Create a Locker access key with read access to the secrets Hermes will resolve. Do not pass its secret value through chat, command arguments, logs, or source control.
+
+### 3. Add the bootstrap variables to Hermes
+
+The gateway process must receive both bootstrap variables before the plugin is enabled:
+
+```dotenv
+LOCKER_ACCESS_KEY_ID=your_access_key_id
+LOCKER_ACCESS_KEY_SECRET=your_secret_access_key
+```
+
+For a standard installation, place them in the active Hermes profile's `.env` file:
+
+```text
+~/.hermes/.env
+```
+
+Examples:
+
+- A gateway running as `root` uses `/root/.hermes/.env`.
+- A gateway running as another service user uses that user's `~/.hermes/.env`.
+- A named Hermes profile uses its active `HERMES_HOME/.env`.
+
+Open the file with an operator-controlled editor, add the two variables, and restrict it to the gateway service account:
+
+```bash
+chmod 600 ~/.hermes/.env
+```
+
+Do not put these values in `config.yaml`, plugin configuration, repositories, shell history, or agent conversations. An installation agent should verify only that both variable names are present. If either is absent, it must ask the operator to provision it without reading or printing the value.
+
+Systemd `EnvironmentFile`, container secrets, and hosting-platform secret stores are also valid when they inject both variables into the gateway process.
+
+> `locker configure` is optional for manual Locker CLI use. Its credential file is intentionally not used by this plugin; Hermes still requires the two variables above in its protected environment.
+
+### 4. Add secrets to Locker
+
+Create the required global secrets in the [Locker dashboard](https://secrets.locker.io). Avoid passing secret values as command-line arguments.
+
+### 5. Install and enable the plugin
 
 ```bash
 hermes plugins install Company-OS-IA/hermes-locker-plugin --enable
 ```
 
-### 5. Configure the profile mapping
+For a reproducible production installation, add `--ref` with a reviewed 40-character commit SHA.
 
-Add to your profile's `config.yaml`:
+### 6. Configure the active Hermes profile
+
+Add explicit mappings to the profile's `config.yaml`:
 
 ```yaml
 secrets:
@@ -50,90 +97,95 @@ secrets:
   locker:
     enabled: true
     override_existing: true
-    timeout_seconds: 15
+    timeout_seconds: 45
     env:
       MY_API_KEY: locker://my_api_key
       DATABASE_URL: locker://database_url
 ```
 
-### 6. Validate and restart
+`timeout_seconds` is the total wall-clock budget for the complete mapping pass. The plugin default is 15 seconds; use a larger value when resolving several remote secrets or when the Locker API has higher latency.
+
+### 7. Validate and restart
+
+Run the probe from an environment that loads the same active Hermes `.env`:
 
 ```bash
+hermes plugins show hermes-locker
 hermes locker status
 hermes locker status --probe-key my_api_key
 hermes gateway restart
+hermes gateway status
 ```
 
-## Bootstrap and authentication
+The probe retrieves the selected value but discards it without printing it.
 
-Locker itself needs a protected service identity. The gateway deployment must provide the Locker CLI bootstrap variables outside Hermes configuration:
+## Configuration reference
 
-- `LOCKER_ACCESS_KEY_ID`
-- `LOCKER_ACCESS_KEY_SECRET`
+| Setting | Required | Default | Description |
+|---|---:|---:|---|
+| `enabled` | Yes | `false` | Enables Locker resolution for the profile. |
+| `env` | Yes | `{}` | Explicit Hermes environment-variable to `locker://key` mappings. |
+| `override_existing` | No | `true` | Lets Locker replace stale shell or `.env` values for mapped variables. |
+| `timeout_seconds` | No | `15` | Total wall-clock budget for one complete fetch pass. |
 
-Legacy `LOCKER_SECRET_ACCESS_KEY` is also accepted for compatibility. These are bootstrap credentials only; provider, MCP, and platform credentials belong in Locker.
+Environment-variable names must match `[A-Z][A-Z0-9_]*`. Locker references must use lowercase snake case and contain at most 128 characters, for example `locker://database_url`.
 
-The Locker CLI supports **access keys** (via environment variables, flags, or credential file). It does **not** expose an OAuth login flow. `Hermes Locker` reports OAuth as unsupported instead of attempting a fallback or presenting a non-functional option.
+## Bootstrap authentication
 
-## Operator CLI
+| Variable | Required | Purpose |
+|---|---:|---|
+| `LOCKER_ACCESS_KEY_ID` | Yes | Identifies the Locker access key used by the active profile. |
+| `LOCKER_ACCESS_KEY_SECRET` | Yes | Supplies the matching secret only through the subprocess environment. |
+| `LOCKER_SECRET_ACCESS_KEY` | Legacy only | Accepted as an older spelling and normalized ephemerally. |
 
-Use the operator CLI before enabling any profile mapping:
+The Locker CLI itself supports flags and credential files, but the plugin deliberately requires profile-scoped environment bootstrap credentials. OAuth and credential-file startup modes are not supported by this plugin.
+
+## Operator commands
 
 ```bash
+hermes locker setup --auth-mode access-keys
 hermes locker status
 hermes locker status --probe-key example_api_key
-hermes locker setup --auth-mode access-keys
-hermes locker setup --auth-mode credential-file
 ```
 
-`status` never prints credential values. `setup` is guidance only: it never downloads installers, invokes remote scripts, writes credentials, or runs interactive authentication.
+These commands never install software, write credentials, run interactive authentication, or print resolved secret values.
 
-## Profile configuration
+## Current limitations
 
-Use a mapped configuration in the specific profile that needs the credential:
-
-```yaml
-secrets:
-  sources: [locker]
-  locker:
-    enabled: true
-    override_existing: true
-    timeout_seconds: 15
-    env:
-      EXAMPLE_API_KEY: locker://example_api_key
-      SECONDARY_API_TOKEN: locker://secondary_api_token
-```
-
-Only lowercase snake case Locker references are accepted. A mapping is all-or-nothing: if any reference is invalid, unavailable, or empty, the plugin applies none of that profile's mapped secrets.
-
-## Validation
-
-```bash
-PYTHONPATH=/usr/local/lib/hermes-agent python tests/test_locker_source.py -v
-```
-
-For a live isolated check, invoke `LockerSecretSource.fetch()` with a temporary home and one non-production mapping. Do not print `FetchResult.secrets`.
-
-## Migration sequence
-
-1. Install and validate on a non-production profile with one mapping.
-2. Migrate one non-critical secret; validate it resolves correctly.
-3. Migrate remaining secrets incrementally.
-4. Remove process-inheritance allowlists and Locker wrapper.
-5. Restart gateway and run full profile-isolation smoke tests.
-
-Do not remove the existing bridge until all affected integrations pass after a gateway restart.
-
-## License
-
-Released under the [MIT License](LICENSE).
+- Only explicit mapped references are supported; bulk import is not.
+- Locker environment selection is not exposed yet. Lookups use Locker's global secret behavior.
+- Credential files created by `locker configure` are not used for Hermes startup.
+- Fetches are sequential and share the configured total timeout budget.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
-|---------|-------|-----|
-| `locker CLI: missing` | Binary not on PATH | Install CLI to `/usr/local/bin` or add to PATH |
-| `authentication probe: failed (unauthorized)` | Access-key pair rejected | Verify that ID and secret belong to the same access key |
-| `authentication probe: failed (forbidden)` | Access key cannot read the requested secret | Grant read access to the project/secret |
-| `Locker returned an empty mapped secret` | Key exists but has no value | Set value via CLI or dashboard |
-| `Flag --secret-access-key has been deprecated` | Old CLI flag usage | Use `--secret-access-key-env` |
+|---|---|---|
+| `locker CLI: missing` | Binary is not on the gateway service account's `PATH`. | Install the Locker CLI or correct the service `PATH`. |
+| `bootstrap access keys not configured` | One or both bootstrap variables are missing from the active Hermes environment. | Add both variables to the active profile `.env` or protected service environment, then restart. |
+| `authentication probe: failed (invalid_access_key_id)` | Locker does not recognize the supplied access-key ID. | Verify or recreate the Locker access key and update the gateway environment. |
+| `authentication probe: failed (unauthorized)` | The ID/secret pair is rejected or does not match. | Provision the matching pair together and restart the gateway. |
+| `authentication probe: failed (forbidden)` | Authentication succeeded but the key cannot read the requested secret. | Grant the access key read permission for that secret or project. |
+| `fetch exceeded ... budget` | The complete mapping pass exceeded `timeout_seconds`. | Increase `secrets.locker.timeout_seconds` and check Locker/network latency. |
+| `Locker returned an empty mapped secret` | The key exists but its value is empty. | Set a non-empty value in Locker. |
+
+## Development validation
+
+Run from a clone with Hermes Agent and pytest available:
+
+```bash
+env -u LOCKER_ACCESS_KEY_ID \
+    -u LOCKER_ACCESS_KEY_SECRET \
+    -u LOCKER_SECRET_ACCESS_KEY \
+    PYTHONPATH=/usr/local/lib/hermes-agent \
+    python -m pytest -q
+
+hermes plugins doctor --ci
+git diff --check
+```
+
+The tests use synthetic values and clear all three Locker bootstrap variables for each case. Never use production credentials in the test suite.
+
+## License
+
+Released under the [MIT License](LICENSE).
