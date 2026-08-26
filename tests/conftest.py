@@ -6,6 +6,5 @@ def clear_locker_environment(monkeypatch):
     for name in (
         "LOCKER_ACCESS_KEY_ID",
         "LOCKER_ACCESS_KEY_SECRET",
-        "LOCKER_SECRET_ACCESS_KEY",
     ):
         monkeypatch.delenv(name, raising=False)

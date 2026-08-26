@@ -82,7 +82,7 @@ class LockerCliTests(unittest.TestCase):
             ["/usr/local/bin/locker", "secret", "get", "--plain", "--no-newline", "--refresh", "--access-key-id", "test-access-key-id", "--secret-access-key-env", "LOCKER_ACCESS_KEY_SECRET", "--", "test_key"],
         )
 
-    def test_status_probe_normalizes_legacy_auth_in_the_child_only(self):
+    def test_status_probe_filters_unrelated_environment(self):
         plugin = load_plugin()
         cli = plugin.cli
         result = type("Result", (), {"returncode": 0, "stdout": "resolved", "stderr": ""})()
@@ -91,8 +91,8 @@ class LockerCliTests(unittest.TestCase):
         with patch.dict(
             cli.os.environ,
             {
-                "LOCKER_ACCESS_KEY_ID": "legacy-access-key-id",
-                "LOCKER_SECRET_ACCESS_KEY": "legacy-access-key-secret",
+                "LOCKER_ACCESS_KEY_ID": "test-access-key-id",
+                "LOCKER_ACCESS_KEY_SECRET": "test-access-key-secret",
                 "UNRELATED_SECRET": "must-not-reach-child",
             },
         ), patch.object(cli.shutil, "which", return_value="/usr/local/bin/locker"), patch.object(
@@ -104,10 +104,9 @@ class LockerCliTests(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         child_env = run.call_args.kwargs["env"]
-        self.assertEqual(child_env["LOCKER_ACCESS_KEY_SECRET"], "legacy-access-key-secret")
-        self.assertNotIn("LOCKER_SECRET_ACCESS_KEY", child_env)
+        self.assertEqual(child_env["LOCKER_ACCESS_KEY_ID"], "test-access-key-id")
+        self.assertEqual(child_env["LOCKER_ACCESS_KEY_SECRET"], "test-access-key-secret")
         self.assertNotIn("UNRELATED_SECRET", child_env)
-        self.assertNotIn("LOCKER_ACCESS_KEY_SECRET", cli.os.environ)
 
     def test_status_probe_does_not_print_helper_stderr(self):
         plugin = load_plugin()

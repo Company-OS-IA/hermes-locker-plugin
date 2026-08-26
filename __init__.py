@@ -37,8 +37,6 @@ _NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
 _BOOTSTRAP_ENV = (
     "LOCKER_ACCESS_KEY_ID",
     "LOCKER_ACCESS_KEY_SECRET",
-    # Legacy spelling accepted by some Locker deployments.
-    "LOCKER_SECRET_ACCESS_KEY",
 )
 
 
@@ -133,8 +131,6 @@ class LockerSecretSource(SecretSource):
         source_env = get_source_environment()
         access_key_id = source_env.get("LOCKER_ACCESS_KEY_ID")
         secret_access_key = source_env.get("LOCKER_ACCESS_KEY_SECRET")
-        if not isinstance(secret_access_key, str) or not secret_access_key.strip():
-            secret_access_key = source_env.get("LOCKER_SECRET_ACCESS_KEY")
         if (
             not isinstance(access_key_id, str)
             or not access_key_id.strip()

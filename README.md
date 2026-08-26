@@ -14,7 +14,6 @@ Hermes Secret Source plugin that resolves explicit Locker Secrets Manager refere
 - Sends only a minimal, ephemeral environment to the Locker CLI.
 - Never prints resolved values or writes them to Hermes configuration.
 - Applies a mapping as a single unit: if one lookup fails or is empty, none of that pass's values are returned.
-- Supports the legacy `LOCKER_SECRET_ACCESS_KEY` name by normalizing it only inside the Locker subprocess environment.
 
 The plugin does not maintain a Python cache or write decrypted values itself. The Locker CLI may maintain its own local data according to its implementation; `--refresh` is used for every plugin lookup to require a fresh Locker response.
 
@@ -136,7 +135,6 @@ Environment-variable names must match `[A-Z][A-Z0-9_]*`. Locker references must 
 |---|---:|---|
 | `LOCKER_ACCESS_KEY_ID` | Yes | Identifies the Locker access key used by the active profile. |
 | `LOCKER_ACCESS_KEY_SECRET` | Yes | Supplies the matching secret only through the subprocess environment. |
-| `LOCKER_SECRET_ACCESS_KEY` | Legacy only | Accepted as an older spelling and normalized ephemerally. |
 
 The Locker CLI itself supports flags and credential files, but the plugin deliberately requires profile-scoped environment bootstrap credentials. OAuth and credential-file startup modes are not supported by this plugin.
 
@@ -176,7 +174,6 @@ Run from a clone with Hermes Agent and pytest available:
 ```bash
 env -u LOCKER_ACCESS_KEY_ID \
     -u LOCKER_ACCESS_KEY_SECRET \
-    -u LOCKER_SECRET_ACCESS_KEY \
     PYTHONPATH=/usr/local/lib/hermes-agent \
     python -m pytest -q
 
@@ -184,7 +181,7 @@ hermes plugins doctor --ci
 git diff --check
 ```
 
-The tests use synthetic values and clear all three Locker bootstrap variables for each case. Never use production credentials in the test suite.
+The tests use synthetic values and clear both Locker bootstrap variables for each case. Never use production credentials in the test suite.
 
 ## License
 

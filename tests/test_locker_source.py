@@ -197,33 +197,18 @@ class LockerSecretSourceTests(unittest.TestCase):
             ],
         )
 
-    def test_fetch_normalizes_legacy_bootstrap_only_for_the_subprocess(self):
+    def test_fetch_requires_the_canonical_secret_key(self):
         plugin = load_plugin()
-        seen = []
-        result_type = type("Result", (), {"returncode": 0, "stdout": "resolved", "stderr": ""})
-
-        def fake_run(argv, *, timeout, bootstrap_env):
-            seen.append(dict(bootstrap_env))
-            return result_type()
-
-        profile_env = {
-            "LOCKER_ACCESS_KEY_ID": "legacy-access-key-id",
-            "LOCKER_SECRET_ACCESS_KEY": "legacy-access-key-secret",
-        }
-        with source_environment(profile_env), patch.object(plugin, "_run_locker", fake_run):
+        with source_environment({"LOCKER_ACCESS_KEY_ID": "test-access-key-id"}), patch.object(
+            plugin, "_run_locker", side_effect=AssertionError("should not run")
+        ):
             result = plugin.LockerSecretSource().fetch(
                 {"enabled": True, "env": {"API_KEY": "locker://api_key"}}, Path("/tmp")
             )
 
-        self.assertTrue(result.ok)
-        self.assertEqual(
-            seen,
-            [{
-                "LOCKER_ACCESS_KEY_ID": "legacy-access-key-id",
-                "LOCKER_ACCESS_KEY_SECRET": "legacy-access-key-secret",
-            }],
-        )
-        self.assertNotIn("LOCKER_ACCESS_KEY_SECRET", profile_env)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_kind.value, "not_configured")
+        self.assertEqual(result.secrets, {})
 
     def test_fetch_reports_missing_bootstrap_without_invoking_locker(self):
         plugin = load_plugin()

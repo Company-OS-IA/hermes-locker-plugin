@@ -8,7 +8,6 @@ import shutil
 import subprocess
 
 _AUTH_ENV = ("LOCKER_ACCESS_KEY_ID", "LOCKER_ACCESS_KEY_SECRET")
-_LEGACY_SECRET_ENV = "LOCKER_SECRET_ACCESS_KEY"
 _KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,127}$")
 _ERROR_CODE_RE = re.compile(r"^Code: ([a-z][a-z0-9_-]*)$", re.MULTILINE)
 
@@ -32,10 +31,7 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
 
 def _safe_locker_env() -> dict[str, str]:
     allowed = ("PATH", "HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "XDG_CONFIG_HOME", *_AUTH_ENV)
-    env = {key: os.environ[key] for key in allowed if key in os.environ}
-    if not env.get("LOCKER_ACCESS_KEY_SECRET") and os.environ.get(_LEGACY_SECRET_ENV):
-        env["LOCKER_ACCESS_KEY_SECRET"] = os.environ[_LEGACY_SECRET_ENV]
-    return env
+    return {key: os.environ[key] for key in allowed if key in os.environ}
 
 
 def _locker_version(binary: str) -> str | None:
@@ -60,7 +56,7 @@ def _locker_version(binary: str) -> str | None:
 
 def _access_keys_present() -> bool:
     return bool(os.environ.get("LOCKER_ACCESS_KEY_ID")) and bool(
-        os.environ.get("LOCKER_ACCESS_KEY_SECRET") or os.environ.get(_LEGACY_SECRET_ENV)
+        os.environ.get("LOCKER_ACCESS_KEY_SECRET")
     )
 
 
