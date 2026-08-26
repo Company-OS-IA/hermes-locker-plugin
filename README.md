@@ -124,6 +124,10 @@ For a live isolated check, invoke `LockerSecretSource.fetch()` with a temporary 
 
 Do not remove the existing bridge until all affected integrations pass after a gateway restart.
 
+## License
+
+Released under the [MIT License](LICENSE).
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
