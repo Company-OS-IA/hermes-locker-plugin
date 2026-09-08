@@ -37,6 +37,8 @@ Não envie scripts remotos diretamente para o shell. Confirme o binário instala
 locker --version
 ```
 
+Execute essa verificação com a mesma conta de serviço e dentro do mesmo contêiner ou runtime que inicia o Hermes. Instalar o Locker CLI somente no host não o disponibiliza dentro de um contêiner do Hermes.
+
 ### 2. Crie a access key bootstrap do Hermes
 
 Crie uma access key no Locker com permissão de leitura nos secrets que o Hermes resolverá. Não envie o valor secreto por chat, argumentos de comandos, logs ou controle de versão.
@@ -92,7 +94,6 @@ Adicione mappings explícitos ao `config.yaml` do perfil:
 
 ```yaml
 secrets:
-  sources: [locker]
   locker:
     enabled: true
     override_existing: true
@@ -101,6 +102,8 @@ secrets:
       MY_API_KEY: locker://my_api_key
       DATABASE_URL: locker://database_url
 ```
+
+`secrets.sources` é opcional. Quando o Locker for o único source, omita essa lista como no exemplo acima: `enabled: true` é suficiente após a descoberta do plugin. Use uma lista `sources` explícita somente quando a ordem entre vários Secret Sources for importante. Algumas versões do Hermes validam essa lista antes de descobrir plugins standalone e podem exibir o aviso transitório `unknown source(s): locker`.
 
 `timeout_seconds` é o orçamento total de tempo para a resolução de todo o conjunto de mappings. O padrão do plugin é 15 segundos; use um valor maior ao resolver vários secrets remotos ou quando a API do Locker apresentar maior latência.
 
@@ -159,7 +162,8 @@ Esses comandos nunca instalam software, gravam credenciais, executam autenticaç
 
 | Sintoma | Causa | Correção |
 |---|---|---|
-| `locker CLI: missing` | O binário não está no `PATH` da conta do gateway. | Instale o Locker CLI ou corrija o `PATH` do serviço. |
+| `unknown source(s): locker` | `secrets.sources` foi validado antes da descoberta do plugin standalone. | Omita a lista opcional `sources` quando o Locker for o único source. Se o Locker não for aplicado depois, atualize o Hermes e confirme que o plugin está habilitado no mesmo perfil. |
+| `locker CLI: missing` | O binário não está disponível no runtime/contêiner ou no `PATH` do gateway. | Instale o Locker CLI nesse mesmo ambiente ou corrija o `PATH` do serviço. |
 | `bootstrap access keys not configured` | Uma ou ambas as variáveis bootstrap estão ausentes do ambiente Hermes ativo. | Adicione as duas variáveis ao `.env` do perfil ativo ou ao ambiente protegido do serviço e reinicie. |
 | `authentication probe: failed (invalid_access_key_id)` | O Locker não reconhece o ID informado. | Confira ou recrie a access key e atualize o ambiente do gateway. |
 | `authentication probe: failed (unauthorized)` | O par ID/secret foi rejeitado ou não corresponde. | Configure o par correspondente em conjunto e reinicie o gateway. |
