@@ -103,9 +103,11 @@ secrets:
       DATABASE_URL: locker://database_url
 ```
 
-`secrets.sources` is optional. For a Locker-only setup, omit it as shown above: `enabled: true` is sufficient after plugin discovery. Use an explicit `sources` list only when ordering multiple Secret Sources matters. Some Hermes versions validate that list before standalone plugins are discovered and may otherwise print a transient `unknown source(s): locker` warning.
+`secrets.sources` is optional and is not an allowlist. For a Locker-only setup, omit it as shown above: `enabled: true` is sufficient after plugin discovery. Enabled sources omitted from the list are still appended; use an explicit list only when ordering multiple Secret Sources matters. Some Hermes versions validate that list before standalone plugins are discovered and may otherwise print a transient `unknown source(s): locker` warning.
 
 `timeout_seconds` is the total wall-clock budget for the complete mapping pass. The plugin default is 15 seconds; use a larger value when resolving several remote secrets or when the Locker API has higher latency.
+
+`cache_ttl_seconds` is not a Locker plugin setting. Remove it from inherited configurations: the plugin intentionally keeps no Python cache and uses `--refresh` for every lookup.
 
 ### 7. Validate and restart
 
