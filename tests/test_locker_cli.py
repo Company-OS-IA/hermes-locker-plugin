@@ -79,7 +79,7 @@ class LockerCliTests(unittest.TestCase):
         self.assertNotIn("never-print-this-secret", output.getvalue())
         self.assertEqual(
             run.call_args.args[0],
-            ["/usr/local/bin/locker", "secret", "get", "--plain", "--no-newline", "--refresh", "--access-key-id", "test-access-key-id", "--secret-access-key-env", "LOCKER_ACCESS_KEY_SECRET", "--", "test_key"],
+            ["/usr/local/bin/locker", "secret", "get", "--plain", "--no-newline", "--refresh", "--", "test_key"],
         )
 
     def test_status_probe_filters_unrelated_environment(self):
@@ -105,7 +105,8 @@ class LockerCliTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         child_env = run.call_args.kwargs["env"]
         self.assertEqual(child_env["LOCKER_ACCESS_KEY_ID"], "test-access-key-id")
-        self.assertEqual(child_env["LOCKER_ACCESS_KEY_SECRET"], "test-access-key-secret")
+        self.assertEqual(child_env["LOCKER_SECRET_ACCESS_KEY"], "test-access-key-secret")
+        self.assertNotIn("LOCKER_ACCESS_KEY_SECRET", child_env)
         self.assertNotIn("UNRELATED_SECRET", child_env)
 
     def test_status_probe_does_not_print_helper_stderr(self):

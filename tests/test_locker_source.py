@@ -51,7 +51,7 @@ class LockerSecretSourceTests(unittest.TestCase):
         run.assert_called_once_with(
             ["locker", "--version"],
             allow_env=(),
-            extra_env=bootstrap,
+            extra_env={"LOCKER_ACCESS_KEY_ID": "test-access-key-id", "LOCKER_SECRET_ACCESS_KEY": "test-access-key-secret"},
             timeout=4.0,
         )
 
@@ -97,7 +97,7 @@ class LockerSecretSourceTests(unittest.TestCase):
             seen,
             [
                 (
-                    ["locker", "secret", "get", "--plain", "--no-newline", "--refresh", "--access-key-id", "test-access-key-id", "--secret-access-key-env", "LOCKER_ACCESS_KEY_SECRET", "--", "primary_api_key"],
+                    ["locker", "secret", "get", "--plain", "--no-newline", "--refresh", "--", "primary_api_key"],
                     15.0,
                     {
                         "LOCKER_ACCESS_KEY_ID": "test-access-key-id",
@@ -105,7 +105,7 @@ class LockerSecretSourceTests(unittest.TestCase):
                     },
                 ),
                 (
-                    ["locker", "secret", "get", "--plain", "--no-newline", "--refresh", "--access-key-id", "test-access-key-id", "--secret-access-key-env", "LOCKER_ACCESS_KEY_SECRET", "--", "secondary_api_token"],
+                    ["locker", "secret", "get", "--plain", "--no-newline", "--refresh", "--", "secondary_api_token"],
                     15.0,
                     {
                         "LOCKER_ACCESS_KEY_ID": "test-access-key-id",

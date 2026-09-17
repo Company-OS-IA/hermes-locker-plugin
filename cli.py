@@ -87,13 +87,12 @@ def _cmd_status(probe_key: str | None = None) -> int:
         print("authentication probe: bootstrap access keys not configured")
         return 1
     child_env = _safe_locker_env()
+    child_env["LOCKER_SECRET_ACCESS_KEY"] = child_env.pop("LOCKER_ACCESS_KEY_SECRET")
     cmd = [
         binary, "secret", "get",
         "--plain",
         "--no-newline",
         "--refresh",
-        "--access-key-id", child_env["LOCKER_ACCESS_KEY_ID"],
-        "--secret-access-key-env", "LOCKER_ACCESS_KEY_SECRET",
         "--", probe_key,
     ]
     try:

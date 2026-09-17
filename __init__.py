@@ -7,7 +7,9 @@ never written by this plugin to config files, logs, or a disk cache.
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -40,11 +42,81 @@ _BOOTSTRAP_ENV = (
 )
 
 
+def _open_credential_directory(directory: str) -> int:
+    """Walk from root by descriptor; reject symlinks in every component."""
+    if not directory or not os.path.isabs(directory):
+        raise ValueError("Missing service credential directory")
+    components = directory.split("/")[1:]
+    if any(part in {"", ".", ".."} for part in components):
+        raise ValueError("Invalid service credential directory")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    fd = os.open("/", flags)
+    try:
+        for part in components:
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+            info = os.fstat(fd)
+            mode = stat.S_IMODE(info.st_mode)
+            # A root-owned sticky parent such as /tmp protects owner-controlled
+            # descendants; all other parents must not be group/world writable.
+            trusted_sticky = info.st_uid == 0 and bool(mode & stat.S_ISVTX)
+            if info.st_uid not in {0, os.geteuid()} or (mode & 0o022 and not trusted_sticky):
+                raise ValueError("Untrusted credential directory ancestor")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def _service_bootstrap(credential_name: Any) -> dict[str, str]:
+    """Read an explicitly opted-in systemd credential, never ambient secrets.
+
+    Only the non-secret directory locator comes from process environment.
+    Values remain local to this fetch and the allowlisted Locker subprocess.
+    """
+    if not isinstance(credential_name, str) or not _NAME_RE.fullmatch(credential_name):
+        raise ValueError("Invalid bootstrap credential name")
+    directory = os.environ.get("CREDENTIALS_DIRECTORY", "")
+    # Fail closed on platforms without secure open flags.
+    dir_fd = _open_credential_directory(directory)
+    try:
+        info = os.fstat(dir_fd)
+        if info.st_uid not in {0, os.geteuid()} or stat.S_IMODE(info.st_mode) & 0o077:
+            raise ValueError("Unsafe credential directory")
+        fd = os.open(credential_name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=dir_fd)
+        try:
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid not in {0, os.geteuid()}
+                    or stat.S_IMODE(info.st_mode) & 0o177 or info.st_size > 16384):
+                raise ValueError("Unsafe credential file")
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                raw = stream.read(16385)
+            if len(raw) > 16384:
+                raise ValueError("Oversized credential")
+        finally:
+            os.close(fd)
+    finally:
+        os.close(dir_fd)
+    values: dict[str, str] = {}
+    for line in raw.decode("utf-8").splitlines():
+        if not line:
+            continue
+        key, separator, value = line.partition("=")
+        if not separator or key not in _BOOTSTRAP_ENV or key in values or not value.strip() or "\x00" in value:
+            raise ValueError("Invalid bootstrap payload")
+        values[key] = value
+    return values
+
+
 def _run_locker(argv: list[str], *, timeout: float, bootstrap_env: dict[str, str]):
     return run_secret_cli(
         argv,
         allow_env=(),
-        extra_env=bootstrap_env,
+        extra_env={
+            "LOCKER_ACCESS_KEY_ID": bootstrap_env["LOCKER_ACCESS_KEY_ID"],
+            "LOCKER_SECRET_ACCESS_KEY": bootstrap_env["LOCKER_ACCESS_KEY_SECRET"],
+        },
         timeout=timeout,
     )
 
@@ -92,6 +164,7 @@ class LockerSecretSource(SecretSource):
             "enabled": {"description": "Enable Locker secret resolution.", "default": False},
             "env": {"description": "Explicit ENV_VAR to locker://key mappings.", "default": {}},
             "timeout_seconds": {"description": "Resolution timeout per startup pass.", "default": 15},
+            "bootstrap_credential": {"description": "Opt-in basename of a protected systemd credential in CREDENTIALS_DIRECTORY; no path or secret value.", "default": None},
             "override_existing": {"description": "Let Locker replace stale shell/.env values.", "default": True},
         }
 
@@ -129,6 +202,24 @@ class LockerSecretSource(SecretSource):
             parsed.append((env_name, key))
 
         source_env = get_source_environment()
+        # Never combine half a profile-specific identity with a shared identity.
+        # Profiles without explicit opt-in cannot consume the service credential.
+        if "bootstrap_credential" in cfg and not any(k in source_env for k in _BOOTSTRAP_ENV):
+            try:
+                source_env = _service_bootstrap(cfg["bootstrap_credential"])
+            except (OSError, ValueError, AttributeError):
+                result.error = "Locker service bootstrap credential is unavailable or invalid."
+                result.error_kind = ErrorKind.NOT_CONFIGURED
+                return result
+        invalid_field = any(
+            k in source_env and (not isinstance(source_env[k], str) or not source_env[k].strip()
+                                 or any(c in source_env[k] for c in ("\x00", "\n", "\r")))
+            for k in _BOOTSTRAP_ENV
+        )
+        if invalid_field:
+            result.error = "Locker bootstrap identity is incomplete or invalid."
+            result.error_kind = ErrorKind.NOT_CONFIGURED
+            return result
         access_key_id = source_env.get("LOCKER_ACCESS_KEY_ID")
         secret_access_key = source_env.get("LOCKER_ACCESS_KEY_SECRET")
         if (
@@ -154,8 +245,6 @@ class LockerSecretSource(SecretSource):
                         "--plain",
                         "--no-newline",
                         "--refresh",
-                        "--access-key-id", access_key_id,
-                        "--secret-access-key-env", "LOCKER_ACCESS_KEY_SECRET",
                         "--", key,
                     ],
                     timeout=self.fetch_timeout_seconds(cfg),
